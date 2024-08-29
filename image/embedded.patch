@@ -1,0 +1,156 @@
+diff --git a/distrib/utils/embedded/conf/x86.conf b/distrib/utils/embedded/conf/x86.conf
+index d34655d7c..83db3c874 100644
+--- a/distrib/utils/embedded/conf/x86.conf
++++ b/distrib/utils/embedded/conf/x86.conf
+@@ -7,10 +7,10 @@ MACHINE=${board}
+ kernel=$src/sys/arch/${board}/compile/GENERIC/netbsd
+ bootfile=$release/usr/mdec/boot
+ 
+-extra=8		# spare space
++extra=${EXTRA_SIZE}		# spare space
+ size=0		# autocompute
+ netbsdid=169
+-init=63
++init=2048
+ ffsoffset=${init}b
+ 
+ make_label() {
+@@ -25,12 +25,14 @@ make_label() {
+ 	local tpc=64
+ 	local spc=2048
+ 	local cylinders=$(( ${totalsize} / ${spc} ))
++    local fsize=1024
++    local bsize=8192
+ 
+ 	cat << EOF
+-type: SCSI
+-disk: STORAGE DEVICE
+-label: fictitious
+-flags: removable
++type: ESDI
++disk: image
++label:
++flags:
+ bytes/sector: ${bps}
+ sectors/track: ${spt}
+ tracks/cylinder: ${tpc}
+@@ -48,6 +50,7 @@ drivedata: 0
+ 8 partitions:
+ #     size         offset        fstype [fsize bsize cpg/sgs]
+  a:   ${asize}     ${aoffset}    4.2BSD  ${fsize} ${bsize} 0  # 
++ b:   ${totalsize} 0             unused      0     0          #
+  c:   ${totalsize} 0             unused      0     0          #
+  d:   ${totalsize} 0             unused      0     0          #
+ EOF
+@@ -57,7 +60,7 @@ make_fstab_normal() {
+ 	cat > ${mnt}/etc/fstab << EOF
+ # NetBSD /etc/fstab
+ # See /usr/share/examples/fstab/ for more examples.
+-/dev/${rootdev}0a	/		ffs	rw,log	1 1
++/dev/${rootdev}0a	/		ffs	${FS_ARGS}	1 1
+ ptyfs		/dev/pts	ptyfs	rw
+ procfs		/proc		procfs	rw
+ EOF
+@@ -70,7 +73,7 @@ make_fstab_minwrites() {
+ 	cat > ${mnt}/etc/fstab << EOF
+ # NetBSD /etc/fstab
+ # See /usr/share/examples/fstab/ for more examples.
+-/dev/${rootdev}0a	/			ffs	rw,log,noatime,nodevmtime 1 1
++/dev/${rootdev}0a	/			ffs	${FS_ARGS} 1 1
+ ptyfs		/dev/pts		ptyfs	rw
+ procfs		/proc			procfs	rw
+ tmpfs		/tmp			tmpfs	rw,-s32M
+diff --git a/distrib/utils/embedded/mkimage b/distrib/utils/embedded/mkimage
+index d1c74dbec..860161e45 100755
+--- a/distrib/utils/embedded/mkimage
++++ b/distrib/utils/embedded/mkimage
+@@ -47,6 +47,7 @@
+ #
+ 
+ set -e
++set -x
+ 
+ DIR="$(cd "$(dirname "$0")" && pwd)"
+ PROG="$(basename "$0")"
+@@ -62,8 +63,10 @@ MKUBOOTIMAGE=${TOOL_MKUBOOTIMAGE:-mkubootimage}
+ GZIP_CMD=${TOOL_GZIP:-gzip} # ${GZIP} is special to gzip(1)
+ 
+ src="/usr/src"
+-sets="base comp etc games gpufw man manhtml misc modules rescue tests text"
+-xsets="xbase xcomp xetc xfont xserver" 
++#sets="base comp etc games gpufw man manhtml misc modules rescue tests text"
++sets="${DEFAULT_SETS}"
++#xsets="xbase xcomp xetc xfont xserver"
++xsets="${DEFAULT_X_SETS}"
+ minfree="10%"
+ bar="==="
+ 
+@@ -151,7 +154,6 @@ resize=false
+ gpt=false
+ gpt_hybrid=false
+ 
+-. "${DIR}/conf/${h}.conf"
+ release="/usr/obj/${MACHINE}/release"
+ 
+ selected_sets="$sets"
+@@ -167,7 +169,7 @@ do
+ 	case $f in
+ 	B)	endian="-B $OPTARG";;
+ 	D)	release="$OPTARG";;
+-	K)	kernel="$OPTARG";;
++	K)	kernel1="$OPTARG";;
+ 	S)	;;
+ 	b)	bootonly=true;;
+ 	d)	dsets_p=true
+@@ -190,6 +192,9 @@ do
+ 	*)	usage;;
+ 	esac
+ done
++. "${DIR}/conf/${h}.conf"
++kernel=$kernel1
++echo "Kernel=$kernel ${TOOL_MAKEFS}"
+ if [ -n "${MKREPRO_TIMESTAMP}" ]; then
+ 	timestamp_opt="-T ${MKREPRO_TIMESTAMP}"
+ 	volume_opt=",volume_id=$((${MKREPRO_TIMESTAMP} & 0xffff))"
+@@ -255,12 +260,17 @@ if [ -n "${msdosid}" ]; then
+ 	    ${image} ${mnt}/boot
+ fi
+ 
++cat $CUSTOM_SET >>"$tmp/selected_sets"
++
+ if [ -z "${bootonly}" ]; then
+ 	echo ${bar} Populating ffs filesystem ${bar}
++    #empty
++    if [ -x "${FS_SCRIPT}" ]; then ${FS_SCRIPT} ${mnt} ${tmp}; fi
++    #empty
+ 	${MAKEFS} -rx ${endian} -N ${release}/etc -t ffs \
+ 	    -O ${ffsoffset} ${timestamp_opt} \
+-	    -o d=4096,f=8192,b=65536 -b $((${extra}))m \
+-	    -F "$tmp/selected_sets" ${image} "${release}" "${mnt}"
++	    -o bsize=16384,fsize=2048,density=8192,version=1,label=bootfs -b $((${extra}))m \
++	    -F "$tmp/selected_sets" ${image} "${release}" "${mnt}" "$CUSTOM_SET_DIR"
+ fi
+ 
+ if [ "${size}" = 0 ]; then
+@@ -321,12 +331,12 @@ else
+ 	elif [ -n "${netbsdid}" ]; then
+ 		echo ${bar} Adding label ${bar}
+ 		make_label > ${tmp}/label
+-		${DISKLABEL} -m -R -F ${image} ${tmp}/label
++		${DISKLABEL} -m -R -F -M ${MACHINE} ${image} ${tmp}/label
+ 
+ 		echo ${bar} Running fdisk ${bar}
+-		${FDISK} -f -i ${image}
+-		${FDISK} -f -a -u -0 -s 169/${init} ${image}
+-		${INSTALLBOOT} -f -v ${image} ${release}/usr/mdec/bootxx_ffsv1
++		${FDISK} -f -i -u -0 -a -s 169/${init} -F ${image}
++		${FDISK} -f -i -c ${release}/usr/mdec/mbr -F ${image}
++		${INSTALLBOOT} -v ${INSTALLBOOT_ARGS} -m ${MACHINE} ${image} ${release}/usr/mdec/bootxx_ffsv1
+ 	fi
+ fi
+ 
+@@ -338,3 +348,4 @@ if $compress; then
+ fi
+ 
+ echo ${bar} Image is ${image} ${bar}
++set +x

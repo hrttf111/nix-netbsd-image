@@ -1,0 +1,85 @@
+diff --git a/bootstrap/bootstrap b/bootstrap/bootstrap
+index 6900cdba3..86c4a1416 100755
+--- a/bootstrap/bootstrap
++++ b/bootstrap/bootstrap
+@@ -39,6 +39,7 @@
+ 
+ # Don't let the bootstrap program get confused by a pre-existing mk.conf
+ # file.
++set -x
+ MAKECONF=/dev/null
+ export MAKECONF
+ 
+@@ -963,7 +964,7 @@ yes)
+ 	;;
+ no)
+ 	configure_quiet_flags=""
+-	make_quiet_flags=""
++	make_quiet_flags=" "
+ esac
+ 
+ test ${make_jobs} -gt 0 2>/dev/null
+@@ -1471,6 +1472,10 @@ fi
+ echo ".endif			# end pkgsrc settings" >> ${TARGET_MKCONF}
+ echo ".endif			# end pkgsrc settings" >> ${BOOTSTRAP_MKCONF}
+ 
++echo_msg "BOOTSTRAP_MKCONF"
++cat ${BOOTSTRAP_MKCONF}
++echo_msg "--BOOTSTRAP_MKCONF"
++
+ # build and register packages
+ # usage: build_package <packagedirectory>
+ build_package() {
+@@ -1573,4 +1578,5 @@ echo ""
+ echo_msg "bootstrap started: $build_start"
+ echo_msg "bootstrap ended:   `date`"
+ 
++set +x
+ exit 0
+diff --git a/mk/platform/Linux.mk b/mk/platform/Linux.mk
+index dc29ae418..591e65784 100644
+--- a/mk/platform/Linux.mk
++++ b/mk/platform/Linux.mk
+@@ -12,7 +12,7 @@ PKGLOCALEDIR?=	share
+ 
+ TYPE?=		type			# Shell builtin
+ 
+-.if exists(/etc/NIXOS)
++.if exists(/nix)
+ PS?=		/run/current-system/sw/bin/ps
+ SU?=		/run/current-system/sw/bin/su
+ USERADD?=	/run/current-system/sw/bin/useradd
+@@ -90,7 +90,7 @@ _OPSYS_LIB_DIRS?=	/lib /usr/lib /lib${LIBABISUFFIX} /usr/lib${LIBABISUFFIX}
+ .elif exists(/etc/arch-release)
+ _OPSYS_SYSTEM_RPATH=	/lib:/usr/lib:/lib${LIBABISUFFIX}:/usr/lib${LIBABISUFFIX}
+ _OPSYS_LIB_DIRS?=	/lib /usr/lib /lib${LIBABISUFFIX} /usr/lib${LIBABISUFFIX}
+-.elif exists(/etc/NIXOS)
++.elif exists(/nix)
+ # NixOS has no fixed locations for system libraries.
+ _OPSYS_INCLUDE_DIRS!=	echo "" | cpp -v 2>&1 | grep '^[[:space:]]*/.*include$$' | tr '\n' ' '
+ 
+diff --git a/mk/tools/tools.Linux.mk b/mk/tools/tools.Linux.mk
+index fe38cc7bf..30b614fde 100644
+--- a/mk/tools/tools.Linux.mk
++++ b/mk/tools/tools.Linux.mk
+@@ -11,8 +11,9 @@
+ # This file still assumes (until it is proven wrong) that some
+ # tools are provided by GNU.
+ 
+-.if exists(/etc/NIXOS)
+-_LINUX_BINPATHS?=	/run/current-system/sw/bin
++#.if exists(/etc/NIXOS)
++.if exists(/run/current-system/sw/bin)
++_LINUX_BINPATHS?=	/run/current-system/sw/bin /bin /usr/bin /sbin /usr/sbin
+ .else
+ _LINUX_BINPATHS?=	/bin /usr/bin /sbin /usr/sbin
+ .endif
+@@ -293,7 +294,7 @@ TOOLS_PLATFORM.gsed?=		${TOOLS_PLATFORM.sed}
+ TOOLS_PLATFORM.gtar?=		${TOOLS_PLATFORM.tar}
+ TOOLS_PLATFORM.gm4?=		${TOOLS_PLATFORM.m4}
+ 
+-TOOLS_PLATFORM.gstrip?=		${TOOLS_PLATFORM.strip}
++#TOOLS_PLATFORM.gstrip?=		${TOOLS_PLATFORM.strip}
+ 
+ .if !empty(TOOLS_PLATFORM.grep)
+ TOOLS_PLATFORM.egrep?=		${TOOLS_PLATFORM.grep} -E

@@ -1,0 +1,27 @@
+IMAGE=netbsd-live.img
+
+if [ "$1" == "-R" ]; then
+    echo "RM image ./${IMAGE}"
+    rm ./${IMAGE}
+fi
+
+if [ ! -f ${IMAGE} ]; then
+    IMAGE_GZ=result/*.gz
+    echo "CP image ${IMAGE_GZ} > ${IMAGE}"
+    zcat ${IMAGE_GZ} > ${IMAGE}
+fi
+
+serial="-serial stdio"
+serial="-chardev pty,id=char0 -serial mon:stdio"
+
+display="-vga std -display none"
+display="-vga std -display gtk"
+
+disk="-device virtio-scsi-pci,id=scsi -device scsi-hd,drive=hd -drive if=none,id=hd,file=./${IMAGE},media=disk,format=raw"
+disk="-boot order=c -hda ./${IMAGE}"
+
+cpu="-cpu host -smp 12"
+cpu="-cpu kvm32"
+cpu="-cpu kvm64"
+
+qemu-system-x86_64 -enable-kvm ${cpu} -m 1024M -machine pc -device virtio-rng-pci ${disk} ${display} ${serial}
