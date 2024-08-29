@@ -51,3 +51,6 @@ Contains derivation which produce set with an arbitrary content. Content is insi
 To create i386 image: nix build ./#netbsd-i386.embedded-image
 To create amd64 image: nix build ./#netbsd-amd64.embedded-image
 Script "start-img" may be used to run image in qemu.
+Default passwords in custom image:
+For "root" user -> root
+For "admin" user -> admin
